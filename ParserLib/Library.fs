@@ -230,6 +230,7 @@ module ParserModule =
     let sepBy p sep = 
         sepBy1 p sep <|> returnP []
 
+
     let pInt =
         //helper function
         let resultToInt digitList = 
@@ -266,6 +267,11 @@ module ParserModule =
                        let msg = sprintf "Expecting %s in %s" beforeStr input
                        Failure msg
             Parser innerFn        
+
+    let getSepByStringParser stringSeparator =
+        let stringParserExceptString = pStringBeforeString stringSeparator <|> anyString
+        let stringSeperatorParser = pString stringSeparator
+        sepBy stringParserExceptString stringSeperatorParser 
 
     //Concatinate string
     let (^) l r = sprintf "%s%s" l r
