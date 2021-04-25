@@ -7,6 +7,8 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "EDI835Parser", "EDI835Parse
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "ParserLib", "ParserLib\ParserLib.fsproj", "{91FEABB0-C5DA-4EC4-B57C-D39E391361FF}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "EDI", "EDI\EDI.fsproj", "{570E6AD0-7077-4144-8428-D865C11F8D10}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{91FEABB0-C5DA-4EC4-B57C-D39E391361FF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{91FEABB0-C5DA-4EC4-B57C-D39E391361FF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{91FEABB0-C5DA-4EC4-B57C-D39E391361FF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{570E6AD0-7077-4144-8428-D865C11F8D10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{570E6AD0-7077-4144-8428-D865C11F8D10}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{570E6AD0-7077-4144-8428-D865C11F8D10}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{570E6AD0-7077-4144-8428-D865C11F8D10}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

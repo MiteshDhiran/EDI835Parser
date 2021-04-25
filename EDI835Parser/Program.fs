@@ -2,6 +2,8 @@
 
 open System
 open ParserLib.ParserModule
+open EDI.EDIModule
+
 // Define a function to construct a message to print
 let from whom =
     sprintf "from %s" whom
@@ -16,17 +18,43 @@ let main argv =
     let p = pStringBeforeString "," <|> anyString
     let working = pStringBeforeString ","
     let stringListResult = run (sepBy1 p comma) "AA,BB"
-    let ediString = System.IO.File.ReadAllText(@"C:\Users\MDHIRAN\source\repos\EDIParser\EDI835Parser\Sample835.txt")
+    let ediString = System.IO.File.ReadAllText(@"C:\Users\MDHIRAN\source\repos\EDIParser\EDI835Parser\Sample835.txt",System.Text.Encoding.ASCII)
+    //let ediString = System.IO.File.ReadAllText(@"C:\Users\MDHIRAN\source\repos\EDIParser\EDI835Parser\Sample835.txt")
     let segmentSeperatorString = "GS" 
     //@"\r\n"
     //let stringParserExceptString = pStringBeforeString "GS" <|> anyString
     //let stringParserExceptString = getSepByStringParser "GS"
     //let segmentSeperatorParser = pString "GS" //pString segmentSeperatorString
-    let newPs = getSepByStringParser "GS"
-    let segments = run newPs "HelloGSWorldGSGood"
-    //let segments = run (sepBy stringParserExceptString segmentSeperatorParser ) "HelloGSWorldGSGood"
+    //let hardCodedEDIString = @"ABC\r\nXYZ\r\nNXC"
+    //let segmentsA = run newPs hardCodedEDIString
+    let finalList = getSegmentsWithLoopIdentifierFromEDIContent ediString
+
+    (*let segmentResult = run (getSepByStringParser Environment.NewLine) ediString
+    let segments =  match segmentResult with
+                           | Success (l,_) -> l |> List.toArray
+                           |  Failure f -> [||]
+    let getSegmentToFields segmentString =
+        let segmentToFieldList = run (getSepByStringParser "*") segmentString
+        match segmentToFieldList with
+                | Success (l,_) -> l |> List.toArray
+                | Failure f -> [||]
+    let segmentWithFields = Array.map (fun segLine -> getSegmentToFields segLine) segments
+    
+    let zz = getRawSegmentRecordData segmentWithFields*)
+
     Console.ReadLine() |> ignore
     0 // return an integer exit code
     
 
+    //ISA Level 1 END ISE
+    //GS Level 2 END GE
+    //ST LEVEL 3 END SE
+    //LX LEVEL 4 END LQ
+    //CLP LEVEL 5 END IS CLP OR LQ
+
+    //LEVEL # SEQ # 
+    //Loop LOOP or SEG []
+
     
+        
+  

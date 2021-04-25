@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
 
@@ -10,14 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Sample835.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Compile Include="Program.fs" />
+    <Compile Include="Library.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EDI\EDI.fsproj" />
     <ProjectReference Include="..\ParserLib\ParserLib.fsproj" />
   </ItemGroup>
 
