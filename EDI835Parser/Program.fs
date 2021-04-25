@@ -27,8 +27,19 @@ let main argv =
     //let segmentSeperatorParser = pString "GS" //pString segmentSeperatorString
     //let hardCodedEDIString = @"ABC\r\nXYZ\r\nNXC"
     //let segmentsA = run newPs hardCodedEDIString
-    let finalList = getSegmentsWithLoopIdentifierFromEDIContent ediString
+    //let finalList = getSegmentsWithLoopIdentifierFromEDIContent ediString
+    let tree = getTree ediString
+    
+    //iterate over tree so that sequence gets executed
+    let totalSize fileSystemItem =
+        let fFile acc (file:SegmentInfo) = 
+            acc + file.fields.Length
+        let fDir acc (dir:DirectoryWithDirectoryInfo)= 
+            acc 
+        EDI.EDIModule.fold fFile fDir 0 fileSystemItem
 
+    let size = totalSize tree.Value
+    
     (*let segmentResult = run (getSepByStringParser Environment.NewLine) ediString
     let segments =  match segmentResult with
                            | Success (l,_) -> l |> List.toArray

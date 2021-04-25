@@ -37,19 +37,35 @@ module EDIModule =
     type SegmentInfo = {segmentName: string; fields:FieldInfo[]}
     type LoopInfo = {loopName: string;fields:FieldInfo[]}
 
-    type EDIItem = Tree<SegmentInfo,LoopInfo> 
+    //type EDIItem = Tree<SegmentInfo,LoopInfo> 
     
     // raw segment record type
     type RawSegmentRecord = {segmentName: string; fieldInfoList : FieldInfo[]}
-    type RawSegmentRecordWithLoopIdentifier = {isLoop: bool;segmentRecord: RawSegmentRecord;loopSequenceNumber: int option;loopLevel: int option}
+    type RawSegmentRecordLoopInfo = {rawSegmentRecord:RawSegmentRecord;loopSequenceNumber:int;loopLevel:int}
+    //type RawSegmentRecordWithLoopIdentifier = {isLoop: bool;segmentRecord: RawSegmentRecord;loopSequenceNumber: int option;loopLevel: int option}
+    type RawSegmentRecordWithLoopIdentifier =
+            | RawSegmentRecordInfo of RawSegmentRecord
+            | LoopWithIndexRecordInfo of RawSegmentRecordLoopInfo
+    
+    //Helper types
+    type LoopIndexValue = {loopName:string;index:int}
+    type LoopIndexValueList = LoopIndexValue list 
 
     //meta info of loop
     type LoopMetaInfo = {loopFirstField: string;loopEndField: string;loopLevel: int;}
+    
+    //Directory i.e. Loop 
+    type Directory = RawSegmentRecordWithLoopIdentifier list
+    type DirectoryWithDirectoryInfo = {directoryLoopInfo: RawSegmentRecordLoopInfo; directoryContent: RawSegmentRecordWithLoopIdentifier list }
 
-    type LoopIndexValue = {loopName:string;index:int}
+    let getDirectoryInfo (list:RawSegmentRecordWithLoopIdentifier list) =
+        match list with
+            | h:: t -> match h with
+                        | LoopWithIndexRecordInfo l -> Some ({directoryLoopInfo=l;directoryContent=list})
+                        | _ -> None
+            | _ -> None
 
-    type LoopIndexValueList = LoopIndexValue list 
-
+    
     //835 Meta Loop Info
     let EDI835LoopInfo = 
         dict 
@@ -77,16 +93,23 @@ module EDIModule =
                             | true -> Some(loopInfoDic.Item rawSegmentRecord.segmentName |> fun f -> f.loopLevel)
                             | false -> None
         let (loopIndexValue: LoopIndexValue option) = List.tryFind (fun (c:LoopIndexValue) -> c.loopName = rawSegmentRecord.segmentName) loopIndexDic 
-        let newIndexValue =  match (isLoop,loopIndexValue) with
+        let newIndexDic =  match (isLoop,loopIndexValue) with
                                     | true, Some value -> 
                                                         let currentLoopIndex = value.index + 1
                                                         let newDic = getNewDicFromOrigDic loopIndexDic {loopName= value.loopName;index=currentLoopIndex + 1}      
                                                         newDic
                                     | true, _ -> getNewDicFromOrigDic loopIndexDic {loopName= rawSegmentRecord.segmentName;index=1}
                                     | false, _ -> loopIndexDic
-                    
-        let segmentWithLoopIdentifier = {isLoop= loopInfoDic.ContainsKey(rawSegmentRecord.segmentName);segmentRecord = rawSegmentRecord;loopSequenceNumber = Some(1);loopLevel= loopLevel}
-        (segmentWithLoopIdentifier,newIndexValue)
+        let indexValueToBeAssigned = match isLoop with 
+                                            | true -> match List.tryFind (fun (c:LoopIndexValue) -> c.loopName = rawSegmentRecord.segmentName) newIndexDic with
+                                                        | Some xx -> Some(xx.index)
+                                                        | _ -> None
+                                            | false -> None
+        
+        let segmentWithLoopIdentifier = match isLoop with
+                                            | true -> LoopWithIndexRecordInfo {rawSegmentRecord=rawSegmentRecord;loopSequenceNumber= indexValueToBeAssigned.Value;loopLevel= loopLevel.Value}
+                                            | false -> RawSegmentRecordInfo rawSegmentRecord
+        (segmentWithLoopIdentifier,newIndexDic)
 
     let foldFun (s:(RawSegmentRecordWithLoopIdentifier list*LoopIndexValueList)) (record:RawSegmentRecord) =
             let stateList,dic = s
@@ -96,7 +119,6 @@ module EDIModule =
 
     let getSegmentsWithLoopIdentifier (records:RawSegmentRecord[]) =
         let loopIndexDic: LoopIndexValueList = []
-        let mutable segmentWithLoopIdentifierList : RawSegmentRecordWithLoopIdentifier list = []
         let resultList, dic = Array.fold ( foldFun) ([],loopIndexDic) records
         resultList 
         
@@ -115,10 +137,71 @@ module EDIModule =
                                 |  Failure f -> [||]
             let segmentWithFields = Array.map (fun segLine -> getSegmentToFields segLine) segments
             let rawSegmentData = getRawSegmentRecordData segmentWithFields
-            let segmentWithLoopIdentifier = getSegmentsWithLoopIdentifier rawSegmentData
+            let segmentWithLoopIdentifier = getSegmentsWithLoopIdentifier rawSegmentData |> List.rev
             segmentWithLoopIdentifier
+    
 
-    //iterate
+    //Create Tree of type EDIItem = Tree<SegmentInfo,LoopInfo> 
+    //type SegmentInfo = {segmentName: string; fields:FieldInfo[]}
+    //type LoopInfo = {loopName: string;fields:FieldInfo[]} 
+    //type RawSegmentRecord = {segmentName: string; fieldInfoList : FieldInfo[]}
+    //type RawSegmentRecordWithLoopIdentifier = {isLoop: bool;segmentRecord: RawSegmentRecord;loopSequenceNumber: int option;loopLevel: int option}
+    //type Directory = RawSegmentRecordWithLoopIdentifier list
+
+    let fromFile (s:RawSegmentRecord) = LeafNode {segmentName=s.segmentName;fields=s.fieldInfoList} 
+    
+    let enumerateFiles (d:DirectoryWithDirectoryInfo) =
+        let seg = List.takeWhile(fun (f:RawSegmentRecordWithLoopIdentifier) ->  match f with | RawSegmentRecordInfo _ -> true | _ -> false  ) d.directoryContent.Tail
+        let onlyFiles = List.fold (fun s t-> 
+                           match t with 
+                            | RawSegmentRecordInfo r -> r::s
+                            | _ -> s) [] seg  
+        onlyFiles
+
+    let rec takeDirectoryAtLevel (level:int) (list: RawSegmentRecordWithLoopIdentifier list) (agg:DirectoryWithDirectoryInfo list)=
+            match list with
+               | h::t -> 
+                        let rest = List.skipWhile (fun f -> match f with 
+                                                                | LoopWithIndexRecordInfo c -> c.loopLevel = level
+                                                                | RawSegmentRecordInfo _ -> true ) list
+                        //Now take from rest till next LoopWithIndexRecordInfo at same level is found -- that will be one directory - 
+                        let d = List.takeWhile (fun f -> match f with 
+                                                            | LoopWithIndexRecordInfo c -> c.loopLevel = level
+                                                            | RawSegmentRecordInfo _ -> true    
+                                                ) rest.Tail
+            
+                        let dd = getDirectoryInfo  (rest.Head :: d)
+                        let newAgg = match dd with
+                                        | Some ddd -> ddd :: agg
+                                        | None -> agg
+                        //Need to convert d to DirectoryWithDirectoryInfo
+                        let remaning = List.skipWhile (fun f -> match f with 
+                                                                    | LoopWithIndexRecordInfo c -> c.loopLevel = level
+                                                                    | RawSegmentRecordInfo _ -> true    
+                                                       ) rest.Tail
+                        takeDirectoryAtLevel level remaning newAgg
+                | _ -> agg
+        
+    //this will return the directories which are immetiately below current directory
+    let enumerateDictionaries (d:DirectoryWithDirectoryInfo) =
+        let dirList = takeDirectoryAtLevel (d.directoryLoopInfo.loopLevel + 1) d.directoryContent []
+        dirList
+        
+    let rec fromDir (dirInfo:DirectoryWithDirectoryInfo) = 
+        let subItems = seq{
+            yield! enumerateFiles dirInfo |> Seq.map fromFile
+            yield! enumerateDictionaries dirInfo |> Seq.map fromDir
+            }
+        InternalNode (dirInfo,subItems)
+
+    let getTree ediString =
+            let segmentsWithLoopIdentfierList = getSegmentsWithLoopIdentifierFromEDIContent ediString
+            let dirInfoOption = getDirectoryInfo segmentsWithLoopIdentfierList
+            match dirInfoOption with
+                | Some dirInfo -> Some (fromDir dirInfo)
+                | _ -> None
+
+    //iterate   
     //let rec fromDir (dirInfo:DirectoryInfo) = 
     //    let subItems = seq{
     //        yield! dirInfo.EnumerateFiles() |> Seq.map fromFile
@@ -126,9 +209,7 @@ module EDIModule =
     //        }
     //    InternalNode (dirInfo,subItems)
     
-    
-
-    
+    //https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/recursive-types-and-folds-3b.html
 
     
 
