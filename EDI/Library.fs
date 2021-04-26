@@ -40,7 +40,7 @@ module EDIModule =
     //type EDIItem = Tree<SegmentInfo,LoopInfo> 
     
     // raw segment record type
-    type RawSegmentRecord = {segmentName: string; fieldInfoList : FieldInfo[]}
+    type RawSegmentRecord = {segmentLineNumber:int;segmentName: string; fieldInfoList : FieldInfo[]; isStartLoopSegment:bool;isEndLoopSegment:bool;loopLevel:int option}
     type RawSegmentRecordLoopInfo = {rawSegmentRecord:RawSegmentRecord;loopSequenceNumber:int;loopLevel:int}
     //type RawSegmentRecordWithLoopIdentifier = {isLoop: bool;segmentRecord: RawSegmentRecord;loopSequenceNumber: int option;loopLevel: int option}
     type RawSegmentRecordWithLoopIdentifier =
@@ -58,6 +58,9 @@ module EDIModule =
     type Directory = RawSegmentRecordWithLoopIdentifier list
     type DirectoryWithDirectoryInfo = {directoryLoopInfo: RawSegmentRecordLoopInfo; directoryContent: RawSegmentRecordWithLoopIdentifier list }
 
+    //EDI Start End Loop Meta info
+    type EDIStartEndLoopInfo = {startLoopInfo:IDictionary<string,LoopMetaInfo>;endLoopInfo:IDictionary<string,LoopMetaInfo>} 
+
     let getDirectoryInfo (list:RawSegmentRecordWithLoopIdentifier list) =
         match list with
             | h:: t -> match h with
@@ -74,14 +77,38 @@ module EDIModule =
                 ("GS",{ loopFirstField = "GS"; loopEndField= "GE";loopLevel=2});
                 ("ST",{ loopFirstField= "ST"; loopEndField= "SE";loopLevel=3});
                 ("LX",{ loopFirstField = "LX"; loopEndField= "LQ";loopLevel=4});
-                ("CLP",{ loopFirstField= "CLP"; loopEndField= "CLP";loopLevel=4});
+                ("CLP",{ loopFirstField= "CLP"; loopEndField= "CLP";loopLevel=5});
             ]
+
+    let EDI835EndLoopInfo = 
+        dict 
+            [ 
+                ("IEA",{ loopFirstField = "ISA"; loopEndField= "ISE";loopLevel=1});
+                ("GE",{ loopFirstField = "GS"; loopEndField= "GE";loopLevel=2});
+                ("SE",{ loopFirstField= "ST"; loopEndField= "SE";loopLevel=3});
+                ("LQ",{ loopFirstField = "LX"; loopEndField= "LQ";loopLevel=4});
+            ]
+
+    
+    let EDI835StartEndLoopInfo = {startLoopInfo=EDI835LoopInfo;endLoopInfo=EDI835EndLoopInfo}
 
     let getFieldInfoFromStringArray (segmentName:string) (fieldStrings:string[]) =
         Array.mapi (fun i f -> {fieldSequenceNumber=i;fieldName=segmentName ^ i.ToString() ;fieldValue=f}) fieldStrings
 
-    let getRawSegmentRecordData (segmentsWithFields: string[][]) =
-        Array.map (fun (f:string[]) -> {segmentName = f.[0];fieldInfoList = getFieldInfoFromStringArray f.[0] (Array.skip 1 f)}) segmentsWithFields
+    let getRawSegmentRecordData (ediStartEndLoopInfo:EDIStartEndLoopInfo) (segmentsWithFields: string[][]) =
+        Array.mapi (
+                fun (index:int) (f:string[]) -> 
+                let segmentName = f.[0]
+                let isStartLoop = ediStartEndLoopInfo.startLoopInfo.ContainsKey(segmentName)
+                let isEndLoop = ediStartEndLoopInfo.endLoopInfo.ContainsKey(segmentName);
+                let loopLevel = if isStartLoop then 
+                                    Some(ediStartEndLoopInfo.startLoopInfo.Item(segmentName).loopLevel) 
+                                else if isEndLoop then 
+                                    Some (ediStartEndLoopInfo.endLoopInfo.Item(segmentName).loopLevel) 
+                                else None
+                {segmentLineNumber=index; segmentName = f.[0];fieldInfoList = getFieldInfoFromStringArray f.[0] (Array.skip 1 f); isStartLoopSegment= isStartLoop;isEndLoopSegment= isEndLoop;loopLevel=loopLevel}
+            )
+            segmentsWithFields
 
     let getNewDicFromOrigDic  (orignalDic: LoopIndexValueList) (kv:LoopIndexValue) =
         let retVal = List.filter (fun v -> v.loopName <> kv.loopName) orignalDic
@@ -136,7 +163,7 @@ module EDIModule =
                                 | Success (l,_) -> l |> List.toArray
                                 |  Failure f -> [||]
             let segmentWithFields = Array.map (fun segLine -> getSegmentToFields segLine) segments
-            let rawSegmentData = getRawSegmentRecordData segmentWithFields
+            let rawSegmentData = getRawSegmentRecordData EDI835StartEndLoopInfo segmentWithFields
             let segmentWithLoopIdentifier = getSegmentsWithLoopIdentifier rawSegmentData |> List.rev
             segmentWithLoopIdentifier
     
@@ -158,28 +185,50 @@ module EDIModule =
                             | _ -> s) [] seg  
         onlyFiles
 
+    let getSegmentSequenceNumber item =
+            match item with
+                | LoopWithIndexRecordInfo c -> c.rawSegmentRecord.segmentLineNumber
+                | RawSegmentRecordInfo r -> r.segmentLineNumber
+
     let rec takeDirectoryAtLevel (level:int) (list: RawSegmentRecordWithLoopIdentifier list) (agg:DirectoryWithDirectoryInfo list)=
             match list with
                | h::t -> 
                         let rest = List.skipWhile (fun f -> match f with 
-                                                                | LoopWithIndexRecordInfo c -> c.loopLevel = level
-                                                                | RawSegmentRecordInfo _ -> true ) list
-                        //Now take from rest till next LoopWithIndexRecordInfo at same level is found -- that will be one directory - 
-                        let d = List.takeWhile (fun f -> match f with 
-                                                            | LoopWithIndexRecordInfo c -> c.loopLevel = level
-                                                            | RawSegmentRecordInfo _ -> true    
-                                                ) rest.Tail
+                                                                | LoopWithIndexRecordInfo c -> c.loopLevel < level
+                                                                | RawSegmentRecordInfo _ -> true    
+                                                  ) list
+                        if rest.IsEmpty = false && rest.Length > 1 then 
+                            let headLooprecord = List.head rest  
+                            let headLoopRecordSegmentNumber = getSegmentSequenceNumber headLooprecord
+                            
+                            //Now take from rest till next LoopWithIndexRecordInfo at same level is found -- that will be one directory - 
+                            //while comparing c.loopLevel = level need to skip the head record in tail
+                            //Skip till first LoopWithIndexRecordInfo record whose loopLevel = level is not found and from there onwards we can
+                            let d = List.takeWhile (fun f -> match f with 
+                                                                | LoopWithIndexRecordInfo c -> c.loopLevel > level || (c.loopLevel = level &&  c.rawSegmentRecord.segmentLineNumber = headLoopRecordSegmentNumber)
+                                                                | RawSegmentRecordInfo r -> r.isEndLoopSegment = false || (r.isEndLoopSegment = true && r.loopLevel.Value >= level)    
+                                                    ) rest
             
-                        let dd = getDirectoryInfo  (rest.Head :: d)
-                        let newAgg = match dd with
-                                        | Some ddd -> ddd :: agg
-                                        | None -> agg
-                        //Need to convert d to DirectoryWithDirectoryInfo
-                        let remaning = List.skipWhile (fun f -> match f with 
-                                                                    | LoopWithIndexRecordInfo c -> c.loopLevel = level
-                                                                    | RawSegmentRecordInfo _ -> true    
-                                                       ) rest.Tail
-                        takeDirectoryAtLevel level remaning newAgg
+                            let dd = getDirectoryInfo  (d)
+                            //takentill
+                            let lastElement = List.last d
+                            let lastSegmentLineNumber =  getSegmentSequenceNumber lastElement
+                            let newAgg = match dd with
+                                            | Some ddd -> ddd :: agg
+                                            | None -> agg
+                            //Need to convert d to DirectoryWithDirectoryInfo
+                            (*
+                            let remaning = List.skipWhile (fun f -> match f with 
+                                                                        | LoopWithIndexRecordInfo c -> c.loopLevel >= level
+                                                                        | RawSegmentRecordInfo _ -> true    
+                                                           ) reatRest.Tail*)
+                            let remaning = List.skipWhile (fun f -> match f with 
+                                                                        | LoopWithIndexRecordInfo c -> c.rawSegmentRecord.segmentLineNumber <= lastSegmentLineNumber
+                                                                        | RawSegmentRecordInfo r -> r.segmentLineNumber <= lastSegmentLineNumber
+                                                           ) rest
+                            takeDirectoryAtLevel level remaning newAgg
+                        else
+                            agg
                 | _ -> agg
         
     //this will return the directories which are immetiately below current directory
