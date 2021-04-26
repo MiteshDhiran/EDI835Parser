@@ -5,11 +5,14 @@ open System
 module EDIModule =
     open ParserLib.ParserModule
     open System.Collections.Generic
+    open System.Runtime.Serialization
+    open System.Runtime.Serialization.Json
 
     //Generic tree code
     type Tree<'LeafData,'INodeData> =
         | LeafNode of 'LeafData
         | InternalNode of 'INodeData * Tree<'LeafData,'INodeData> seq
+
 
     let rec cata fLeaf fNode (tree:Tree<'LeafData,'INodeData>) :'r = 
         let recurse = cata fLeaf fNode  
@@ -42,9 +45,33 @@ module EDIModule =
             let newNodeInfo = fNode nodeInfo
             let newSubtrees = subtrees |> Seq.map recurse 
             InternalNode (newNodeInfo, newSubtrees)
-            
+    
+    [<CLIMutableAttribute>]
+    type TreeDto<'LeafData,'NodeData> = {
+        leafData : 'LeafData
+        nodeData : 'NodeData
+        subtrees : TreeDto<'LeafData,'NodeData>[] }
+
+    
+    /// Transform a Tree into a TreeDto
+    let treeToDto tree : TreeDto<'LeafData,'NodeData> =
+    
+        let fLeaf leafData  = 
+            let nodeData = Unchecked.defaultof<'NodeData>
+            let subtrees = [||]
+            {leafData=leafData; nodeData=nodeData; subtrees=subtrees}
+    
+        let fNode nodeData subtrees = 
+            let leafData = Unchecked.defaultof<'NodeData>
+            let subtrees = subtrees |> Seq.toArray 
+            {leafData=leafData; nodeData=nodeData; subtrees=subtrees}
+    
+        // recurse to build up the TreeDto
+        cata fLeaf fNode tree
+
     //EDI Item Type definition
     type FieldInfo = {fieldSequenceNumber: int;fieldName:string; fieldValue: string;}
+    [<CLIMutableAttribute>]
     type SegmentInfo = {segmentName: string; fields:FieldInfo[]}
     type LoopInfo = {loopName: string;fields:FieldInfo[]}
 
@@ -66,11 +93,18 @@ module EDIModule =
     type LoopMetaInfo = {loopFirstField: string;loopEndField: string;loopLevel: int;}
     
     //Directory i.e. Loop 
-    type Directory = RawSegmentRecordWithLoopIdentifier list
     type DirectoryWithDirectoryInfo = {directoryLoopInfo: RawSegmentRecordLoopInfo; directoryContent: RawSegmentRecordWithLoopIdentifier list; directorySegments:RawSegmentRecordWithLoopIdentifier list}
 
     //EDI Start End Loop Meta info
     type EDIStartEndLoopInfo = {startLoopInfo:IDictionary<string,LoopMetaInfo>;endLoopInfo:IDictionary<string,LoopMetaInfo>} 
+
+    let toJson (o:'a) = 
+        let serializer = new DataContractJsonSerializer(typeof<'a>)
+        let encoding = System.Text.UTF8Encoding()
+        use stream = new System.IO.MemoryStream()
+        serializer.WriteObject(stream,o) 
+        stream.Close()
+        encoding.GetString(stream.ToArray())
 
     (*let getDirectoryInfoOld (list:RawSegmentRecordWithLoopIdentifier list) =
         match list with
@@ -191,14 +225,6 @@ module EDIModule =
             let segmentWithLoopIdentifier = getSegmentsWithLoopIdentifier rawSegmentData |> List.rev
             segmentWithLoopIdentifier
     
-
-    //Create Tree of type EDIItem = Tree<SegmentInfo,LoopInfo> 
-    //type SegmentInfo = {segmentName: string; fields:FieldInfo[]}
-    //type LoopInfo = {loopName: string;fields:FieldInfo[]} 
-    //type RawSegmentRecord = {segmentName: string; fieldInfoList : FieldInfo[]}
-    //type RawSegmentRecordWithLoopIdentifier = {isLoop: bool;segmentRecord: RawSegmentRecord;loopSequenceNumber: int option;loopLevel: int option}
-    //type Directory = RawSegmentRecordWithLoopIdentifier list
-
     let fromFile (s:RawSegmentRecord) = LeafNode {segmentName=s.segmentName;fields=s.fieldInfoList} 
     
     let enumerateFiles (d:DirectoryWithDirectoryInfo) =
@@ -267,10 +293,27 @@ module EDIModule =
             }
         InternalNode (dirInfo,subItems)
 
+    [<CLIMutableAttribute>]
     type PureDirectory = {directoryLoopInfo: RawSegmentRecordLoopInfo; directorySegments:RawSegmentRecordWithLoopIdentifier list}
+    [<CLIMutableAttribute>]
+    type Directory = {loopSegment:SegmentInfo;directorySegments:SegmentInfo[]}
 
+    let getSegmentInfoFromRawSegmentRecordLoopInfo  (directoryLoopInfo: RawSegmentRecordLoopInfo) =
+        {segmentName= directoryLoopInfo.rawSegmentRecord.segmentName; fields=directoryLoopInfo.rawSegmentRecord.fieldInfoList}
+
+    let getSegmentInfoFromRawSegmentRecordWithLoopIdentifier (d:RawSegmentRecordWithLoopIdentifier) =
+        match d with
+            | RawSegmentRecordInfo r -> {segmentName = r.segmentName;fields=r.fieldInfoList}
+            | LoopWithIndexRecordInfo l -> {segmentName = l.rawSegmentRecord.segmentName;fields=l.rawSegmentRecord.fieldInfoList}
+
+    let getDirectorySegmentsFromDirectoryWithLoopIdentifiers (d:RawSegmentRecordWithLoopIdentifier list) =
+        List.map (fun f -> getSegmentInfoFromRawSegmentRecordWithLoopIdentifier f) d   
+
+    //RawSegmentRecordLoopInfo
     let getPureDirectory (dirInfo:DirectoryWithDirectoryInfo) =
-        {directoryLoopInfo=dirInfo.directoryLoopInfo; directorySegments=dirInfo.directorySegments}
+        let loopSegment = getSegmentInfoFromRawSegmentRecordLoopInfo dirInfo.directoryLoopInfo
+        let directorySegments = getDirectorySegmentsFromDirectoryWithLoopIdentifiers dirInfo.directorySegments
+        {loopSegment=loopSegment; directorySegments= List.toArray directorySegments}
 
     let transformToPureDirectoryTree ediTree = 
         let mapSegment (s:SegmentInfo) = s
@@ -284,9 +327,11 @@ module EDIModule =
                             | Some dirInfo -> Some (fromDir dirInfo)
                             | _ -> None
             let transformedTree = transformToPureDirectoryTree tree.Value 
-            transformedTree
+            let dtoTree = treeToDto transformedTree
+            let jsonData = toJson dtoTree 
+            jsonData
 
-
+    
     
 
     

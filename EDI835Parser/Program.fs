@@ -29,8 +29,9 @@ let main argv =
     //let segmentsA = run newPs hardCodedEDIString
     //let finalList = getSegmentsWithLoopIdentifierFromEDIContent ediString
     let tree = getTree ediString
-    
+    printf "%s" tree  
     //iterate over tree so that sequence gets executed
+    (*
     let totalSize fileSystemItem =
         let fFile acc (file:SegmentInfo) = 
             acc + file.fields.Length
@@ -39,7 +40,8 @@ let main argv =
         EDI.EDIModule.fold fFile fDir 0 fileSystemItem
 
     let size = totalSize tree
-    
+    *)
+
     (*let segmentResult = run (getSepByStringParser Environment.NewLine) ediString
     let segments =  match segmentResult with
                            | Success (l,_) -> l |> List.toArray
