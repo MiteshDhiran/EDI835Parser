@@ -34,11 +34,11 @@ let main argv =
     let totalSize fileSystemItem =
         let fFile acc (file:SegmentInfo) = 
             acc + file.fields.Length
-        let fDir acc (dir:DirectoryWithDirectoryInfo)= 
+        let fDir acc (dir:PureDirectory)= 
             acc 
         EDI.EDIModule.fold fFile fDir 0 fileSystemItem
 
-    let size = totalSize tree.Value
+    let size = totalSize tree
     
     (*let segmentResult = run (getSepByStringParser Environment.NewLine) ediString
     let segments =  match segmentResult with

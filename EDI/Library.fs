@@ -32,6 +32,17 @@ module EDIModule =
             // ... and return it
             finalAccum
 
+    let rec map fLeaf fNode (tree:Tree<'LeafData,'INodeData>) = 
+        let recurse = map fLeaf fNode  
+        match tree with
+        | LeafNode leafInfo -> 
+            let newLeafInfo = fLeaf leafInfo
+            LeafNode newLeafInfo 
+        | InternalNode (nodeInfo,subtrees) -> 
+            let newNodeInfo = fNode nodeInfo
+            let newSubtrees = subtrees |> Seq.map recurse 
+            InternalNode (newNodeInfo, newSubtrees)
+            
     //EDI Item Type definition
     type FieldInfo = {fieldSequenceNumber: int;fieldName:string; fieldValue: string;}
     type SegmentInfo = {segmentName: string; fields:FieldInfo[]}
@@ -70,8 +81,8 @@ module EDIModule =
 
     let getTheFirstLoppAndOnlySegmentsBeforeNextLoop (list:RawSegmentRecordWithLoopIdentifier list) =
         list.Head :: List.takeWhile (fun c -> match c with 
-                                    | RawSegmentRecordInfo r -> true
-                                    | LoopWithIndexRecordInfo l -> false    
+                                                | RawSegmentRecordInfo r -> true
+                                                | LoopWithIndexRecordInfo l -> false    
                        ) list.Tail
     //take from the list only the segment and the first Loop -- other segments will be part of other directory
     let getDirectoryInfo (list:RawSegmentRecordWithLoopIdentifier list) =
@@ -256,23 +267,32 @@ module EDIModule =
             }
         InternalNode (dirInfo,subItems)
 
+    type PureDirectory = {directoryLoopInfo: RawSegmentRecordLoopInfo; directorySegments:RawSegmentRecordWithLoopIdentifier list}
+
+    let getPureDirectory (dirInfo:DirectoryWithDirectoryInfo) =
+        {directoryLoopInfo=dirInfo.directoryLoopInfo; directorySegments=dirInfo.directorySegments}
+
+    let transformToPureDirectoryTree ediTree = 
+        let mapSegment (s:SegmentInfo) = s
+        let mapDir (d:DirectoryWithDirectoryInfo) = getPureDirectory d
+        map mapSegment mapDir ediTree
+
     let getTree ediString =
             let segmentsWithLoopIdentfierList = getSegmentsWithLoopIdentifierFromEDIContent ediString
             let dirInfoOption = getDirectoryInfo segmentsWithLoopIdentfierList
-            match dirInfoOption with
-                | Some dirInfo -> Some (fromDir dirInfo)
-                | _ -> None
+            let tree = match dirInfoOption with
+                            | Some dirInfo -> Some (fromDir dirInfo)
+                            | _ -> None
+            let transformedTree = transformToPureDirectoryTree tree.Value 
+            transformedTree
 
-    //iterate   
-    //let rec fromDir (dirInfo:DirectoryInfo) = 
-    //    let subItems = seq{
-    //        yield! dirInfo.EnumerateFiles() |> Seq.map fromFile
-    //        yield! dirInfo.EnumerateDirectories() |> Seq.map fromDir
-    //        }
-    //    InternalNode (dirInfo,subItems)
+
+    
+
+    
     
     //https://swlaschin.gitbooks.io/fsharpforfunandprofit/content/posts/recursive-types-and-folds-3b.html
-
+    
     
 
     let hello name =
