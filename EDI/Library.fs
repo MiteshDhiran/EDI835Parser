@@ -56,19 +56,32 @@ module EDIModule =
     
     //Directory i.e. Loop 
     type Directory = RawSegmentRecordWithLoopIdentifier list
-    type DirectoryWithDirectoryInfo = {directoryLoopInfo: RawSegmentRecordLoopInfo; directoryContent: RawSegmentRecordWithLoopIdentifier list }
+    type DirectoryWithDirectoryInfo = {directoryLoopInfo: RawSegmentRecordLoopInfo; directoryContent: RawSegmentRecordWithLoopIdentifier list; directorySegments:RawSegmentRecordWithLoopIdentifier list}
 
     //EDI Start End Loop Meta info
     type EDIStartEndLoopInfo = {startLoopInfo:IDictionary<string,LoopMetaInfo>;endLoopInfo:IDictionary<string,LoopMetaInfo>} 
 
-    let getDirectoryInfo (list:RawSegmentRecordWithLoopIdentifier list) =
+    (*let getDirectoryInfoOld (list:RawSegmentRecordWithLoopIdentifier list) =
         match list with
             | h:: t -> match h with
                         | LoopWithIndexRecordInfo l -> Some ({directoryLoopInfo=l;directoryContent=list})
                         | _ -> None
-            | _ -> None
+            | _ -> None*)
 
-    
+    let getTheFirstLoppAndOnlySegmentsBeforeNextLoop (list:RawSegmentRecordWithLoopIdentifier list) =
+        list.Head :: List.takeWhile (fun c -> match c with 
+                                    | RawSegmentRecordInfo r -> true
+                                    | LoopWithIndexRecordInfo l -> false    
+                       ) list.Tail
+    //take from the list only the segment and the first Loop -- other segments will be part of other directory
+    let getDirectoryInfo (list:RawSegmentRecordWithLoopIdentifier list) =
+        let onlydirectorySegments = getTheFirstLoppAndOnlySegmentsBeforeNextLoop list
+        match onlydirectorySegments with
+            | h:: t -> match h with
+                        | LoopWithIndexRecordInfo l -> Some ({directoryLoopInfo=l;directoryContent=list;directorySegments=onlydirectorySegments})
+                        | _ -> None
+            | _ -> None
+   
     //835 Meta Loop Info
     let EDI835LoopInfo = 
         dict 
